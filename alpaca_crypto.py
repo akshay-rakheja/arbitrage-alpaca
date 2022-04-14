@@ -1,7 +1,62 @@
-# from alpaca_trade_api.rest import REST, TimeFrame
+from wsgiref.headers import Headers
+from alpaca_trade_api.rest import REST, TimeFrame
+import config
+import requests
+import logging
 
-# alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
-#               'https://paper-api.alpaca.markets')
+# ENABLE LOGGING - options, DEBUG,INFO, WARNING?
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
+              'https://paper-api.alpaca.markets')
+
+HEADERS = {'APCA-API-KEY-ID': config.APCA_API_KEY_ID,
+           'APCA-API-SECRET-KEY': config.APCA_API_SECRET_KEY}
+
+
+trading_pair = 'MATICUSD'  # Checking quotes and trading MATIC against USD
+exchange = 'FTXU'  # FTXUS
+DATA_URL = 'https://data.alpaca.markets'
+
+
+def get_api_quote_data(trading_pair, exchange):
+    '''
+    Get trade quote data from 1Inch API
+    '''
+    try:
+        quote = requests.get(
+            '{0}/v1beta1/crypto/{1}/quotes/latest?exchange={2}'.format(DATA_URL, trading_pair, exchange), headers=HEADERS)
+        logger.info('Alpaca quote reply status code: {0}'.format(
+            quote.status_code))
+        if quote.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(quote.json()))
+            return False
+        logger.info('get_api_quote_data: {0}'.format(quote.json()))
+
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting trade quote from Alpaca: {0}".format(e))
+        return False
+
+    return quote.json()
+
+
+def main():
+    '''
+    These are examples of different functions in the script.
+    Uncomment the command you want to run.
+    '''
+    # get price quote for 1 ETH in DAI right now
+    # matic_price = one_inch_get_quote(
+    #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
+
+    matic_price = get_api_quote_data(trading_pair, exchange)
+    print("matic price is :", matic_price['quote']['ap'])
+
 
 # in_position_quantity = 0
 # pending_orders = {}
@@ -88,61 +143,60 @@
 # manager.start()
 
 
-from alpaca_trade_api.stream import Stream
-import config
-import os
+# from alpaca_trade_api.stream import Stream
+# import config
+# import os
 
 
-async def print_trade(t):
-    print('trade', t)
+# async def print_trade(t):
+#     print('trade', t)
 
 
-async def print_quote(q):
-    print('quote', q)
+# async def print_quote(q):
+#     print('quote', q)
 
 
-async def print_trade_update(tu):
-    print('trade update', tu)
+# async def print_trade_update(tu):
+#     print('trade update', tu)
 
 
-async def print_crypto_trade(t):
-    print('crypto trade', t)
+# async def print_crypto_trade(t):
+#     print('crypto trade', t)
 
 
-def main():
+# def main():
 
-    BASE_URL = "https://paper-api.alpaca.markets"
-    CRYPTO_URL = 'https://data.alpaca.markets/v1beta1/crypto'
-    ALPACA_API_KEY = config.APCA_API_KEY_ID
-    ALPACA_SECRET_KEY = config.APCA_API_SECRET_KEY
+#     BASE_URL = "https://paper-api.alpaca.markets"
+#     CRYPTO_URL = 'https://data.alpaca.markets/v1beta1/crypto'
+#     ALPACA_API_KEY = config.APCA_API_KEY_ID
+#     ALPACA_SECRET_KEY = config.APCA_API_SECRET_KEY
 
-    feed = 'iex'  # <- replace to SIP if you have PRO subscription
-    stream = Stream(key_id=ALPACA_API_KEY,
-                    secret_key=ALPACA_SECRET_KEY, base_url=BASE_URL, raw_data=True, data_stream_url=CRYPTO_URL)
-    # stream.subscribe_trade_updates(print_trade_update)
-    stream.subscribe_trades(print_trade, 'BTCUSD')
-    # stream.subscribe_quotes(print_quote, 'IBM')
-    # stream.subscribe_crypto_trades(print_crypto_trade, 'BTCUSD')
-    # print(stream)
+#     feed = 'iex'  # <- replace to SIP if you have PRO subscription
+#     stream = Stream(key_id=ALPACA_API_KEY,
+#                     secret_key=ALPACA_SECRET_KEY, base_url=BASE_URL, raw_data=True, data_stream_url=CRYPTO_URL)
+#     # stream.subscribe_trade_updates(print_trade_update)
+#     stream.subscribe_trades(print_trade, 'BTCUSD')
+#     # stream.subscribe_quotes(print_quote, 'IBM')
+#     # stream.subscribe_crypto_trades(print_crypto_trade, 'BTCUSD')
+#     # print(stream)
 
-    @stream.on_bar('MSFT')
-    async def _(bar):
-        print('bar', bar)
+#     @stream.on_bar('MSFT')
+#     async def _(bar):
+#         print('bar', bar)
 
-    # @stream.on_updated_bar('MSFT')
-    # async def _(bar):
-    #     print('updated bar', bar)
+#     # @stream.on_updated_bar('MSFT')
+#     # async def _(bar):
+#     #     print('updated bar', bar)
 
-    @stream.on_status("*")
-    async def _(status):
-        print('status', status)
+#     @stream.on_status("*")
+#     async def _(status):
+#         print('status', status)
 
-    # @stream.on_luld('AAPL', 'MSFT')
-    # async def _(luld):
-    #     print('LULD', luld)
+#     # @stream.on_luld('AAPL', 'MSFT')
+#     # async def _(luld):
+#     #     print('LULD', luld)
 
-    stream.run()
-
+#     stream.run()
 
 if __name__ == "__main__":
     main()

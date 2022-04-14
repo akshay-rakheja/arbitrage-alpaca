@@ -1,0 +1,4 @@
+web3
+alpaca_trade_api
+requests
+logging
