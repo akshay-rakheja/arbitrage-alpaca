@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 production = False  # False to prevent any public TX from being sent
 slippage = 1
+waitTime = 5
 
 # OneInch API
 BASE_URL = 'https://api.1inch.io/v4.0/137'
@@ -57,6 +58,11 @@ trading_pair = 'MATICUSD'  # Checking quotes and trading MATIC against USD
 exchange = 'FTXU'  # FTXUS
 DATA_URL = 'https://data.alpaca.markets'
 
+last_alpaca_ask_price = 0
+last_oneInch_market_price = 0
+
+trade_size = 10
+
 
 async def main():
     '''
@@ -71,7 +77,8 @@ async def main():
             matic_address, usdc_address, amount_to_exchange))
         l2 = loop.create_task(get_Alpaca_quote_data(trading_pair, exchange))
         await asyncio.wait([l1, l2])
-        await asyncio.sleep(5)
+        # Wait for the a certain amount of time between each quote request
+        await asyncio.sleep(waitTime)
     # print("matic price is :", matic_price['quote']['ap'])
     # time.sleep(2)
     # while True:
@@ -97,8 +104,8 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
         # logger.info(
         #     "Undesirable response from 1 Inch! This is probably bad.")
         # return False
-        logger.info('OneInch Price: {0}'.format(
-            int(quote.json()['toTokenAmount'])/10**6))
+        last_oneInch_market_price = int(quote.json()['toTokenAmount'])/10**6
+        logger.info('OneInch Price: {0}'.format(last_oneInch_market_price))
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from 1 Inch: {0}".format(e))
@@ -120,13 +127,19 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
         #     logger.info(
         #         "Undesirable response from Alpaca! {}".format(quote.json()))
         #     return False
-        logger.info('Alpaca Price: {0}'.format(quote.json()['quote']['ap']))
+        last_alpaca_ask_price = quote.json()['quote']['ap']
+        logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from Alpaca: {0}".format(e))
         return False
 
     return quote.json()
+
+
+async def check_arbitrage():
+    pass
+
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())

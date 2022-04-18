@@ -1,3 +1,4 @@
+from subprocess import call
 import config
 
 #!/usr/bin/env python
@@ -99,15 +100,15 @@ def main():
         matic_price['toTokenAmount'])/10**6, "USDC")
 
     swap_data = get_api_swap_call_data(
-        usdc_address, matic_address, amount_to_exchange)
+        matic_address, usdc_address, amount_to_exchange)
     # print("swap data is :", swap_data)
 
-    allowance = get_allowance(usdc_address)
-    print("Allowance for USDC is: ", allowance['allowance'])
+    # allowance = get_allowance(usdc_address)
+    # print("Allowance for USDC is: ", allowance['allowance'])
 
-    print("swap data is :", swap_data)
-    # swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
-    # print("swap txn response is: ", swap_txn)
+    # print("swap data is :", swap_data)
+    swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
+    print("swap txn response is: ", swap_txn)
 
     # approval_txn = approve_ERC20(10)
     # approval_hash = signAndSendTransaction(approval_txn)
@@ -254,17 +255,31 @@ def get_api_swap_call_data(_from_coin, _to_coin, _amount_to_exchange):
         logger.info('response from 1 inch generic call_data request - status code: {0}'.format(
             call_data.status_code))
         if call_data.status_code != 200:
-            logger.info(
-                "Undesirable response from 1 Inch! This is probably bad.")
+            logger.info(call_data.json()['description'])
             return False
-        logger.info('get_api_call_data: {0}'.format(call_data.json()))
+        call_data = call_data.json()
+        nonce = w3.eth.getTransactionCount(wallet_address)
+        tx = {
+            'from': call_data['tx']['from'],
+            'nonce': nonce,
+            'to': Web3.toChecksumAddress(call_data['tx']['to']),
+            'chainId': 137,
+            'value': amount_to_exchange,
+            'gasPrice': w3.toWei(90, 'gwei'),
+            'data': call_data['tx']['data'],
+            'gas': call_data['tx']['gas']
+        }
+        # tx = call_data['tx']
+        # tx['nonce'] = nonce  # Adding nonce to tx data
+
+        logger.info('get_api_call_data: {0}'.format(call_data))
 
     except Exception as e:
         logger.warning(
             "There was a issue getting get contract call data from 1 inch: {0}".format(e))
         return False
 
-    return call_data.json()
+    return tx
 
 
 def get_api_quote_data(_from_coin, _to_coin, _amount_to_exchange):
