@@ -8,6 +8,8 @@ import logging
 import json
 import os
 from web3 import Web3
+# import web3
+
 
 # ENABLE LOGGING - options, DEBUG,INFO, WARNING?
 logging.basicConfig(level=logging.INFO,
@@ -43,6 +45,7 @@ usdc_address = Web3.toChecksumAddress(
 
 eth_provider_url = config.ALCHEMY_URL
 base_account = Web3.toChecksumAddress(config.BASE_ACCOUNT)
+wallet_address = base_account
 private_key = config.PRIVATE_KEY
 BASE_URL = 'https://api.1inch.io/v4.0/137'
 # required - example: export ETH_PROVIDER_URL="https://mainnet.infura.io/v3/yourkeyhere77777"
@@ -70,6 +73,16 @@ BASE_URL = 'https://api.1inch.io/v4.0/137'
 #         'No private key has been set. Script will not be able to send transactions!')
 #     private_key = False
 
+# swapParams = {
+#     fromTokenAddress: matic_address,  # matic address
+#     toTokenAddress: usdc_address,  # usdc address
+#     amount: amount_to_exchange,  # amount to exchange
+#     fromAddress: wallet_address,  # wallet address
+#     slippage: 1,
+#     disableEstimate: false,
+#     allowPartialFill: false,
+# }
+
 
 def main():
     '''
@@ -86,13 +99,28 @@ def main():
         matic_price['toTokenAmount'])/10**6, "USDC")
 
     swap_data = get_api_swap_call_data(
-        matic_address, usdc_address, amount_to_exchange)
+        usdc_address, matic_address, amount_to_exchange)
+    # print("swap data is :", swap_data)
+
+    allowance = get_allowance(usdc_address)
+    print("Allowance for USDC is: ", allowance['allowance'])
+
     print("swap data is :", swap_data)
+    # swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
+    # print("swap txn response is: ", swap_txn)
+
+    # approval_txn = approve_ERC20(10)
+    # approval_hash = signAndSendTransaction(approval_txn)
+    # print("Approval hash is: ", w3.toHex(approval_hash))
+
+    # allowance = get_allowance(usdc_address)
+    # print("Allowance for USDC is: ", allowance['allowance'])
+
     # logger.info("1 ETH = {0} DAI on 1 Inch right now!".format(
     #     Web3.fromWei(matic_price['toTokenAmount'] / 10**6, 'ether')))
 
     # here is a ETH --> DAI exchange using 1 inch split contract (without api)
-    one_inch_token_swap(matic_address, usdc_address, amount_to_exchange)
+    # one_inch_token_swap(matic_address, usdc_address, amount_to_exchange)
 
     # Here are the steps for DAI --> ETH exchange using 1 inch split contract (without api)
     # We have to take an extra step to make this exchange by approving the 1 Inch contract
@@ -109,13 +137,120 @@ def main():
     # one_inch_token_swap(mcd_contract_address, ethereum, amount_of_dai)
 
 
+def signAndSendTransaction(transaction_data):
+    txn = w3.eth.account.signTransaction(transaction_data, private_key)
+    tx_hash = w3.eth.sendRawTransaction(txn.rawTransaction)
+    return tx_hash
+    # const {rawTransaction} = await web3.eth.accounts.signTransaction(transaction, privateKey)
+
+    # return await broadCastRawTransaction(rawTransaction)
+
+
+def get_allowance(_token):
+    '''
+    Get allowance for a given token, the 1inch router is allowed to spend
+    '''
+    try:
+        allowance = requests.get(
+            '{0}/approve/allowance?tokenAddress={1}&walletAddress={2}'.format(BASE_URL, _token, wallet_address))
+        logger.info('1inch allowance reply status code: {0}'.format(
+            allowance.status_code))
+        if allowance.status_code != 200:
+            logger.info(
+                "Undesirable response from 1 Inch! This is probably bad.")
+            return False
+        logger.info('get_allowance: {0}'.format(allowance.json()))
+
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting allowance for the token from 1 Inch: {0}".format(e))
+        return False
+    logger.info("allowance: {0}".format(allowance))
+    return allowance.json()
+
+
+def approve_ERC20(_amount_of_ERC):
+    '''
+    Send a transaction to MCD/DAI contract approving 1 Inch join contract to spend _amount_of_ERC worth of base_accounts tokens
+    '''
+    # load our contract
+    # mcd_contract = web3.eth.contract(
+    #     address=mcd_contract_address, abi=mcd_abi)
+
+    allowance_before = get_allowance(wallet_address)
+    logger.info("allowance before: {0}".format(allowance_before))
+
+    try:
+        approve_txn = requests.get(
+            '{0}/approve/transaction?tokenAddress={1}&amount={2}'.format(BASE_URL, usdc_address, _amount_of_ERC))
+        logger.info('1inch allowance reply status code: {0}'.format(
+            approve_txn.status_code))
+        if approve_txn.status_code != 200:
+            logger.info(
+                "Undesirable response from 1 Inch! This is probably bad.")
+            return False
+        logger.info('get_allowance: {0}'.format(approve_txn.json()))
+
+    except Exception as e:
+        logger.exception(
+            "There was an issue allowing usdc spend from 1 Inch: {0}".format(e))
+        return False
+
+    approve_txn = approve_txn.json()
+    # logger.info("allowance: {0}".format(allowance))
+
+    # get our nonce
+    nonce = w3.eth.getTransactionCount(wallet_address)
+
+    # encode our data
+    # data = mcd_contract.encodeABI(fn_name="approve", args=[
+    #     one_inch_split_contract, _amount_of_ERC])
+    print("gas price is:", w3.fromWei(int(approve_txn['gasPrice']), 'gwei'))
+
+    tx = {
+        'nonce': nonce,
+        'to': usdc_address,
+        'chainId': 137,
+        # 'value': approve_txn['value'],
+        'gasPrice': w3.toWei(70, 'gwei'),
+        'from': wallet_address,
+        'data': approve_txn['data']
+    }
+
+    # get gas estimate
+    # gas_estimate = w3.eth.estimateGas(tx)
+    tx['gas'] = 80000
+    # print("gas estimate: {0}".format(gas_estimate))
+    # tx["gas"] = approve_txn['gasPrice']
+
+    logger.info('transaction data: {0}'.format(tx))
+
+    return tx
+
+    # # sign and broadcast our trade
+    # if private_key and production == True:
+    #     try:
+    #         signed_tx = web3.eth.account.signTransaction(tx, private_key)
+    #     except:
+    #         logger.exception("Failed to created signed TX!")
+    #         return False
+    #     try:
+    #         tx_hash = web3.eth.sendRawTransaction(signed_tx.rawTransaction)
+    #         logger.info("TXID from 1 Inch: {0}".format(web3.toHex(tx_hash)))
+    #     except:
+    #         logger.warning("Failed sending TX to 1 inch!")
+    #         return False
+    # else:
+    #     logger.info('No private key found! Transaction has not been broadcast!')
+
+
 def get_api_swap_call_data(_from_coin, _to_coin, _amount_to_exchange):
     '''
     Get call data from 1Inch API
     '''
     try:
         call_data = requests.get(
-            '{0}/swap?fromTokenAddress={1}&toTokenAddress={2}&amount={3}&fromAddress={4}&slippage={5}'.format(BASE_URL, _from_coin, _to_coin, _amount_to_exchange, base_account, slippage))
+            '{0}/swap?fromTokenAddress={1}&toTokenAddress={2}&amount={3}&fromAddress={4}&slippage={5}'.format(BASE_URL, _from_coin, _to_coin, _amount_to_exchange, wallet_address, slippage))
         logger.info('response from 1 inch generic call_data request - status code: {0}'.format(
             call_data.status_code))
         if call_data.status_code != 200:
@@ -155,43 +290,6 @@ def get_api_quote_data(_from_coin, _to_coin, _amount_to_exchange):
     return quote.json()
 
 
-def one_inch_get_quote(_from_token, _to_token, _amount):
-    '''
-    Get quote data from one inch join contract using on-chain call
-    '''
-    # load our contract
-    one_inch_join = web3.eth.contract(
-        address=config.polygon_oracle, abi=config.oracli_abi)
-
-    # # load beta contract
-    # beta_one_inch_join = web3.eth.contract(
-    #     address=beta_one_inch_split_contract, abi=beta_one_inch_split_abi)
-
-    # make call request to contract on the Ethereum blockchain
-    contract_response = one_inch_join.functions.getExpectedReturn(
-        _from_token, _to_token, _amount, 100, 0).call({'from': base_account})
-
-    '''
-    work in progress. I'm not sure that it's safe to get quotes onchain yet though
-    https://github.com/CryptoManiacsZone/1inchProtocol
-    The sequence of number of pieces source volume could be splitted (Works like granularity, 
-    higly affects gas usage. Should be called offchain, but could be called onchain if user swaps not his own funds, 
-    but this is still considered as not safe)
-    '''
-    parts = 10  # still not 100% what parts means here. I _think_ maybe it maps to total number of exchanges to use
-    # static for now, might be better if it was dynamic
-    gas_price = web3.toWei('100', 'gwei')
-
-    beta_contract_response = beta_one_inch_join.functions.getExpectedReturnWithGas(
-        _from_token, _to_token, _amount, parts, 0, gas_price *
-        contract_response[0]
-    ).call({'from': base_account})
-
-    logger.info("contract response: {0}".format(contract_response))
-    logger.info("beta contract response: {0}".format(beta_contract_response))
-    return contract_response
-
-
 def one_inch_token_swap(_from_token, _to_token, _amount):
     '''
     Used to swap tokens on 1Inch directly through the one inch split contract
@@ -214,7 +312,7 @@ def one_inch_token_swap(_from_token, _to_token, _amount):
         address=one_inch_split_contract, abi=one_inch_split_abi)
 
     # get our nonce
-    nonce = web3.eth.getTransactionCount(base_account)
+    nonce = web3.eth.getTransactionCount(wallet_address)
 
     # craft transaction call data
     data = one_inch_join.encodeABI(fn_name="swap", args=[
@@ -231,7 +329,7 @@ def one_inch_token_swap(_from_token, _to_token, _amount):
         'to': one_inch_split_contract,
         'value': value,
         'gasPrice': web3.eth.gasPrice,
-        'from': base_account,
+        'from': wallet_address,
         'data': data
     }
 
@@ -258,69 +356,41 @@ def one_inch_token_swap(_from_token, _to_token, _amount):
         logger.info('No private key found! Transaction has not been broadcast!')
 
 
-def approve_ERC20(_amount_of_ERC):
+def one_inch_get_quote(_from_token, _to_token, _amount):
     '''
-    Send a transaction to MCD/DAI contract approving 1 Inch join contract to spend _amount_of_ERC worth of base_accounts tokens
-    '''
-    # load our contract
-    mcd_contract = web3.eth.contract(
-        address=mcd_contract_address, abi=mcd_abi)
-
-    allowance_before = get_allowance(base_account)
-    logger.info("allowance before: {0}".format(allowance_before))
-
-    # get our nonce
-    nonce = web3.eth.getTransactionCount(base_account)
-
-    # encode our data
-    data = mcd_contract.encodeABI(fn_name="approve", args=[
-        one_inch_split_contract, _amount_of_ERC])
-
-    tx = {
-        'nonce': nonce,
-        'to': mcd_contract_address,
-        'value': 0,
-        'gasPrice': web3.eth.gasPrice,
-        'from': base_account,
-        'data': data
-    }
-
-    # get gas estimate
-    tx["gas"] = web3.eth.estimateGas(tx)
-
-    logger.info('transaction data: {0}'.format(tx))
-
-    # sign and broadcast our trade
-    if private_key and production == True:
-        try:
-            signed_tx = web3.eth.account.signTransaction(tx, private_key)
-        except:
-            logger.exception("Failed to created signed TX!")
-            return False
-        try:
-            tx_hash = web3.eth.sendRawTransaction(signed_tx.rawTransaction)
-            logger.info("TXID from 1 Inch: {0}".format(web3.toHex(tx_hash)))
-        except:
-            logger.warning("Failed sending TX to 1 inch!")
-            return False
-    else:
-        logger.info('No private key found! Transaction has not been broadcast!')
-
-
-def get_allowance(account):
-    '''
-    check a given token contract to confirm/deny you have successfully approved spending of your accounts tokens
+    Get quote data from one inch join contract using on-chain call
     '''
     # load our contract
-    mcd_contract = web3.eth.contract(
-        address=mcd_contract_address, abi=mcd_abi)
+    one_inch_join = web3.eth.contract(
+        address=config.polygon_oracle, abi=config.oracli_abi)
 
-    # make contract call to allowance function
-    allowance = mcd_contract.functions.allowance(
-        account, one_inch_split_contract).call()
+    # # load beta contract
+    # beta_one_inch_join = web3.eth.contract(
+    #     address=beta_one_inch_split_contract, abi=beta_one_inch_split_abi)
 
-    logger.info("allowance: {0}".format(allowance))
-    return allowance
+    # make call request to contract on the Ethereum blockchain
+    contract_response = one_inch_join.functions.getExpectedReturn(
+        _from_token, _to_token, _amount, 100, 0).call({'from': wallet_address})
+
+    '''
+    work in progress. I'm not sure that it's safe to get quotes onchain yet though
+    https://github.com/CryptoManiacsZone/1inchProtocol
+    The sequence of number of pieces source volume could be splitted (Works like granularity, 
+    higly affects gas usage. Should be called offchain, but could be called onchain if user swaps not his own funds, 
+    but this is still considered as not safe)
+    '''
+    parts = 10  # still not 100% what parts means here. I _think_ maybe it maps to total number of exchanges to use
+    # static for now, might be better if it was dynamic
+    gas_price = web3.toWei('100', 'gwei')
+
+    beta_contract_response = beta_one_inch_join.functions.getExpectedReturnWithGas(
+        _from_token, _to_token, _amount, parts, 0, gas_price *
+        contract_response[0]
+    ).call({'from': wallet_address})
+
+    logger.info("contract response: {0}".format(contract_response))
+    logger.info("beta contract response: {0}".format(beta_contract_response))
+    return contract_response
 
 
 def connect_to_ETH_provider():
@@ -334,7 +404,7 @@ def connect_to_ETH_provider():
 
 
 # establish web3 connection
-web3 = connect_to_ETH_provider()
+w3 = connect_to_ETH_provider()
 
 # run it!
 if __name__ == '__main__':

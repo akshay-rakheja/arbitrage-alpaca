@@ -3,6 +3,8 @@ from alpaca_trade_api.rest import REST, TimeFrame
 import config
 import requests
 import logging
+from multiprocessing import Process
+import time
 
 # ENABLE LOGGING - options, DEBUG,INFO, WARNING?
 logging.basicConfig(level=logging.INFO,
@@ -53,9 +55,10 @@ def main():
     # get price quote for 1 ETH in DAI right now
     # matic_price = one_inch_get_quote(
     #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
-
-    matic_price = get_api_quote_data(trading_pair, exchange)
-    print("matic price is :", matic_price['quote']['ap'])
+    while True:
+        matic_price = get_api_quote_data(trading_pair, exchange)
+        print("matic price is :", matic_price['quote']['ap'])
+        time.sleep(2)
 
 
 # in_position_quantity = 0
