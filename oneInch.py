@@ -29,7 +29,7 @@ slippage = 1
 amount_to_exchange = Web3.toWei(1, 'ether')
 
 # if USDC --> MATIC (using base unit, so 1 here = 1 DAI/MCD)
-amount_of_usdc = Web3.toWei(1, 'ether')
+amount_of_usdc = 1000000
 
 # one_inch_split_contract = Web3.toChecksumAddress(
 #     '0xC586BeF4a0992C495Cf22e1aeEE4E446CECDee0E')  # 1 inch split contract
@@ -100,7 +100,7 @@ def main():
         matic_price['toTokenAmount'])/10**6, "USDC")
 
     swap_data = get_api_swap_call_data(
-        matic_address, usdc_address, amount_to_exchange)
+        usdc_address, matic_address, amount_of_usdc)
     # print("swap data is :", swap_data)
 
     # allowance = get_allowance(usdc_address)
@@ -108,7 +108,7 @@ def main():
 
     # print("swap data is :", swap_data)
     swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
-    print("swap txn response is: ", swap_txn)
+    print("swap txn response is: ", Web3.toHex(swap_txn))
 
     # approval_txn = approve_ERC20(10)
     # approval_hash = signAndSendTransaction(approval_txn)
@@ -264,8 +264,8 @@ def get_api_swap_call_data(_from_coin, _to_coin, _amount_to_exchange):
             'nonce': nonce,
             'to': Web3.toChecksumAddress(call_data['tx']['to']),
             'chainId': 137,
-            'value': amount_to_exchange,
-            'gasPrice': w3.toWei(90, 'gwei'),
+            'value': int(call_data['tx']['value']),
+            'gasPrice': w3.toWei(call_data['tx']['gasPrice'], 'wei'),
             'data': call_data['tx']['data'],
             'gas': call_data['tx']['gas']
         }

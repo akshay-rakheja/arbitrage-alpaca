@@ -44,6 +44,7 @@ usdc_address = Web3.toChecksumAddress(
 eth_provider_url = config.ALCHEMY_URL
 base_account = Web3.toChecksumAddress(config.BASE_ACCOUNT)
 wallet_address = base_account
+private_key = config.PRIVATE_KEY
 
 
 # Alpaca API
@@ -76,6 +77,7 @@ async def main():
         l1 = loop.create_task(get_oneInch_quote_data(
             matic_address, usdc_address, amount_to_exchange))
         l2 = loop.create_task(get_Alpaca_quote_data(trading_pair, exchange))
+        # Wait for the tasks to finish
         await asyncio.wait([l1, l2])
         # Wait for the a certain amount of time between each quote request
         await asyncio.sleep(waitTime)
@@ -135,6 +137,65 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
         return False
 
     return quote.json()
+
+
+async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
+    '''
+    Get call data from 1Inch API
+    '''
+    try:
+        call_data = requests.get(
+            '{0}/swap?fromTokenAddress={1}&toTokenAddress={2}&amount={3}&fromAddress={4}&slippage={5}'.format(BASE_URL, _from_coin, _to_coin, _amount_to_exchange, wallet_address, slippage))
+        logger.info('response from 1 inch generic call_data request - status code: {0}'.format(
+            call_data.status_code))
+        if call_data.status_code != 200:
+            logger.info(call_data.json()['description'])
+            return False
+        call_data = call_data.json()
+        nonce = w3.eth.getTransactionCount(wallet_address)
+        tx = {
+            'from': call_data['tx']['from'],
+            'nonce': nonce,
+            'to': Web3.toChecksumAddress(call_data['tx']['to']),
+            'chainId': 137,
+            'value': int(call_data['tx']['value']),
+            'gasPrice': w3.toWei(call_data['tx']['gasPrice'], 'wei'),
+            'data': call_data['tx']['data'],
+            'gas': call_data['tx']['gas']
+        }
+        # tx = call_data['tx']
+        # tx['nonce'] = nonce  # Adding nonce to tx data
+
+        logger.info('get_api_call_data: {0}'.format(call_data))
+
+    except Exception as e:
+        logger.warning(
+            "There was a issue getting get contract call data from 1 inch: {0}".format(e))
+        return False
+
+    return tx
+
+
+# Establish connection to the WEB3 provider
+def connect_to_ETH_provider():
+    try:
+        web3 = Web3(Web3.HTTPProvider(eth_provider_url))
+    except Exception as e:
+        logger.warning(
+            "There is an issue with your initial connection to Ethereum Provider: {0}".format(e))
+        quit()
+    return web3
+
+
+# Sign and send txns to the blockchain
+def signAndSendTransaction(transaction_data):
+    txn = w3.eth.account.signTransaction(transaction_data, private_key)
+    tx_hash = w3.eth.sendRawTransaction(txn.rawTransaction)
+    return tx_hash
+
+
+# establish web3 connection
+w3 = connect_to_ETH_provider()
 
 
 async def check_arbitrage():
