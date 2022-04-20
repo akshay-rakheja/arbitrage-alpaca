@@ -9,7 +9,9 @@ import logging
 import json
 import os
 from web3 import Web3
-# import web3
+# from abi import usdc_contract_abi
+# import '../abi/usdc_contract.json'
+# import 'abi/usdc_contract_abi.json'
 
 
 # ENABLE LOGGING - options, DEBUG,INFO, WARNING?
@@ -18,9 +20,9 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 # Load up MCD and 1 Inch split contract ABIs
-one_inch_split_abi = json.load(open('abi/one_inch_split.json', 'r'))
-beta_one_inch_split_abi = json.load(open('abi/beta_one_inch_split.json', 'r'))
-mcd_abi = json.load(open('abi/mcd_join.json', 'r'))
+# one_inch_split_abi = json.load(open('abi/one_inch_split.json', 'r'))
+# beta_one_inch_split_abi = json.load(open('abi/beta_one_inch_split.json', 'r'))
+# mcd_abi = json.load(open('abi/mcd_join.json', 'r'))
 
 production = False  # False to prevent any public TX from being sent
 slippage = 1
@@ -30,6 +32,7 @@ amount_to_exchange = Web3.toWei(1, 'ether')
 
 # if USDC --> MATIC (using base unit, so 1 here = 1 DAI/MCD)
 amount_of_usdc = 1000000
+
 
 # one_inch_split_contract = Web3.toChecksumAddress(
 #     '0xC586BeF4a0992C495Cf22e1aeEE4E446CECDee0E')  # 1 inch split contract
@@ -43,6 +46,9 @@ matic_address = Web3.toChecksumAddress(
 
 usdc_address = Web3.toChecksumAddress(
     '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174')  # USDC Token contract address
+
+usdc_contract_abi = json.load(open('usdc_contract_abi.json', 'r'))
+# print(usdc_contract_abi)
 
 eth_provider_url = config.ALCHEMY_URL
 base_account = Web3.toChecksumAddress(config.BASE_ACCOUNT)
@@ -93,6 +99,9 @@ def main():
     # get price quote for 1 ETH in DAI right now
     # matic_price = one_inch_get_quote(
     #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
+    usdc_token = w3.eth.contract(address=usdc_address, abi=usdc_contract_abi)
+    usdc_balance = usdc_token.functions.balanceOf(wallet_address).call()
+    print("USDC balance: {0}".format(usdc_balance))
 
     matic_price = get_api_quote_data(
         matic_address, usdc_address, amount_to_exchange)
@@ -107,8 +116,8 @@ def main():
     # print("Allowance for USDC is: ", allowance['allowance'])
 
     # print("swap data is :", swap_data)
-    swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
-    print("swap txn response is: ", Web3.toHex(swap_txn))
+    # swap_txn = signAndSendTransaction(swap_data)  # swapping USDC for Matic
+    # print("swap txn response is: ", Web3.toHex(swap_txn))
 
     # approval_txn = approve_ERC20(10)
     # approval_hash = signAndSendTransaction(approval_txn)

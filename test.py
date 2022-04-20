@@ -27,24 +27,26 @@ production = False  # False to prevent any public TX from being sent
 slippage = 1
 waitTime = 5
 
+min_arb_percent = 0.5
+
+
 # OneInch API
 BASE_URL = 'https://api.1inch.io/v4.0/137'
 
-# Alpaca URL
-BASE_ALPACA_URL = 'https://paper-api.alpaca.markets'
-
 # if MATIC --> USDC - (enter the amount in units Ether)
-amount_to_exchange = Web3.toWei(1, 'ether')
-
-# if USDC --> MATIC (using base unit, so 1 here = 1 DAI/MCD)
-amount_of_usdc = Web3.toWei(1, 'ether')
+trade_size = 10
+amount_to_exchange = Web3.toWei(trade_size, 'ether')
 
 matic_address = Web3.toChecksumAddress(
-    '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE')  # ETHEREUM
+    '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE')  # MATIC Token Contract address on Polygon Network
 
 
 usdc_address = Web3.toChecksumAddress(
-    '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174')  # USDC Token contract address
+    '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174')  # USDC Token contract address on Polygon Network
+
+# Contract abi for usdc contract on poolygon
+usdc_contract_abi = json.load(open('usdc_contract_abi.json', 'r'))
+
 
 eth_provider_url = config.ALCHEMY_URL
 base_account = Web3.toChecksumAddress(config.BASE_ACCOUNT)
@@ -53,21 +55,16 @@ private_key = config.PRIVATE_KEY
 
 
 # Alpaca API
-alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
-              'https://paper-api.alpaca.markets')
-
+BASE_ALPACA_URL = 'https://paper-api.alpaca.markets'
+DATA_URL = 'https://data.alpaca.markets'
 HEADERS = {'APCA-API-KEY-ID': config.APCA_API_KEY_ID,
            'APCA-API-SECRET-KEY': config.APCA_API_SECRET_KEY}
 
-
 trading_pair = 'MATICUSD'  # Checking quotes and trading MATIC against USD
 exchange = 'FTXU'  # FTXUS
-DATA_URL = 'https://data.alpaca.markets'
 
 last_alpaca_ask_price = 0
 last_oneInch_market_price = 0
-
-trade_size = 10
 
 
 async def main():
@@ -78,6 +75,16 @@ async def main():
     # get price quote for 1 ETH in DAI right now
     # matic_price = one_inch_get_quote(
     #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
+    usdc_token = w3.eth.contract(address=usdc_address, abi=usdc_contract_abi)
+    usdc_balance = usdc_token.functions.balanceOf(wallet_address).call()
+
+    logger.info('Matic Position on Alpaca: {0}'.format(get_positions()))
+    logger.info("USD position on Alpaca: {0}".format(
+        get_account_details()['cash']))
+    logger.info('Matic Position on 1 Inch: {0}'.format(
+        Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')))
+    logger.info('USD Position on 1 Inch: {0}'.format(usdc_balance/10**6))
+
     while True:
         l1 = loop.create_task(get_oneInch_quote_data(
             matic_address, usdc_address, amount_to_exchange))
@@ -115,7 +122,8 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
         # return False
         global last_oneInch_market_price
         last_oneInch_market_price = int(quote.json()['toTokenAmount'])/10**6
-        logger.info('OneInch Price: {0}'.format(last_oneInch_market_price))
+        logger.info('OneInch Price for 10 MATIC: {0}'.format(
+            last_oneInch_market_price))
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from 1 Inch: {0}".format(e))
@@ -138,8 +146,10 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
         #         "Undesirable response from Alpaca! {}".format(quote.json()))
         #     return False
         global last_alpaca_ask_price
-        last_alpaca_ask_price = quote.json()['quote']['ap']
-        logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
+        last_alpaca_ask_price = quote.json(
+        )['quote']['ap'] * 10  # for 10 MATIC
+        logger.info('Alpaca Price for 10 MATIC: {0}'.format(
+            last_alpaca_ask_price))
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from Alpaca: {0}".format(e))
@@ -148,7 +158,7 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
     return last_alpaca_ask_price
 
 
-async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
+def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
     '''
     Get call data from 1Inch API
     '''
@@ -175,7 +185,7 @@ async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
         # tx = call_data['tx']
         # tx['nonce'] = nonce  # Adding nonce to tx data
 
-        logger.info('get_api_call_data: {0}'.format(call_data))
+        # logger.info('get_api_call_data: {0}'.format(call_data))
 
     except Exception as e:
         logger.warning(
@@ -183,6 +193,27 @@ async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
         return False
 
     return tx
+
+
+def get_account_details():
+    '''
+    Get Alpaca Trading Account Details
+    '''
+    try:
+        account = requests.get(
+            '{0}/v2/account'.format(BASE_ALPACA_URL), headers=HEADERS)
+        # logger.info('Alpaca account reply status code: {0}'.format(
+        # account.status_code))
+        if account.status_code != 200:
+            # logger.info(
+            #     "Undesirable response from Alpaca! {}".format(account.json()))
+            return False
+        # logger.info('get_account_details: {0}'.format(account.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting account details from Alpaca: {0}".format(e))
+        return False
+    return account.json()
 
 
 def get_open_orders():
@@ -212,16 +243,16 @@ def get_positions():
     '''
     try:
         positions = requests.get(
-            '{0}/v2/positions'.format(BASE_URL), headers=HEADERS)
-        logger.info('Alpaca positions reply status code: {0}'.format(
-            positions.status_code))
+            '{0}/v2/positions'.format(BASE_ALPACA_URL), headers=HEADERS)
+        # logger.info('Alpaca positions reply status code: {0}'.format(
+        # positions.status_code))
         if positions.status_code != 200:
             logger.info(
                 "Undesirable response from Alpaca! {}".format(positions.json()))
             return False
         # positions = positions[0]
         matic_position = positions.json()[0]['qty']
-        logger.info('Matic Position on Alpaca: {0}'.format(matic_position))
+        # logger.info('Matic Position on Alpaca: {0}'.format(matic_position))
     except Exception as e:
         logger.exception(
             "There was an issue getting positions from Alpaca: {0}".format(e))
@@ -229,7 +260,7 @@ def get_positions():
     return matic_position
 
 
-def post_order(symbol, qty, side, type, time_in_force):
+def post_Alpaca_order(symbol, qty, side, type, time_in_force):
     '''
     Post an order to Alpaca
     '''
@@ -248,7 +279,7 @@ def post_order(symbol, qty, side, type, time_in_force):
             logger.info(
                 "Undesirable response from Alpaca! {}".format(order.json()))
             return False
-        logger.info('post_order: {0}'.format(order.json()))
+        # logger.info('post_Alpaca_order: {0}'.format(order.json()))
     except Exception as e:
         logger.exception(
             "There was an issue posting order to Alpaca: {0}".format(e))
@@ -269,32 +300,88 @@ def connect_to_ETH_provider():
 
 # Sign and send txns to the blockchain
 def signAndSendTransaction(transaction_data):
-    txn = w3.eth.account.signTransaction(transaction_data, private_key)
-    tx_hash = w3.eth.sendRawTransaction(txn.rawTransaction)
+    try:
+        txn = w3.eth.account.signTransaction(transaction_data, private_key)
+        tx_hash = w3.eth.sendRawTransaction(txn.rawTransaction)
+        logger.info(
+            'TXN can be found at https://polygonscan.com/tx/{0}'.format(Web3.toHex(tx_hash)))
+    except Exception as e:
+        logger.warning(
+            "There is an issue sending transaction to the blockchain: {0}".format(e))
     return tx_hash
+
+# Check for Arbitrage opportunities
+
+
+def check_arbitrage():
+    logger.info('Checking for arbitrage opportunities')
+    # print(last_alpaca_ask_price)
+    # print(last_oneInch_market_price)
+    if (last_alpaca_ask_price > last_oneInch_market_price * (1 + min_arb_percent/100)):
+        logger.info('Selling on ALPACA, Buying on 1Inch')
+        if production:
+            sell_order = post_Alpaca_order(
+                trading_pair, 10, 'sell', 'market', 'gtc')
+            logger.info('Selling on ALPACA Status: {0}'.format(
+                sell_order['status']))
+            buy_order_data = get_oneInch_swap_data(
+                usdc_address, matic_address, last_oneInch_market_price*amount_to_exchange * (10**6))  # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
+            buy_order = signAndSendTransaction(buy_order_data)
+    elif last_alpaca_ask_price < last_oneInch_market_price * (1 - min_arb_percent/100):
+        logger.info('Buying on ALPACA, Selling on 1Inch')
+        if production:
+            buy_order = post_Alpaca_order(
+                trading_pair, 10, 'buy', 'market', 'gtc')
+            logger.info('Buying on ALPACA Status: {0}'.format(
+                buy_order['status']))
+            sell_order_data = get_oneInch_swap_data(
+                matic_address, usdc_address, amount_to_exchange)
+            sell_order = signAndSendTransaction(sell_order_data)
+    else:
+        # (abs(last_alpaca_ask_price - last_oneInch_market_price)/last_alpaca_ask_price < rebalance_percent/100):
+        logger.info('No arbitrage opportunity available')
+        logger.info('Rebalancing')
+        rebalancing()
+    pass
+
+# Rebalance Portfolio
+
+
+def rebalancing():
+    current_matic_alpaca = get_positions()
+    current_matic_1Inch = Web3.fromWei(
+        w3.eth.getBalance(wallet_address), 'ether')
+    if current_matic_alpaca > initial_matic_alpaca:
+        logger.info('Rebalancing by Selling MATIC on ALPACA')
+        if production:
+            sell_order = post_Alpaca_order(
+                trading_pair, current_matic_alpaca-initial_matic_alpaca, 'sell', 'market', 'gtc')
+    elif current_matic_alpaca < initial_matic_alpaca:
+        logger.info('Rebalancing by Buying MATIC on ALPACA')
+        if production:
+            buy_order = post_Alpaca_order(
+                trading_pair, initial_matic_alpaca-current_matic_alpaca, 'buy', 'market', 'gtc')
+
+    if current_matic_1Inch > initial_matic_1inch:
+        logger.info('Rebalancing by Selling MATIC on 1Inch')
+        if production:
+            sell_order_data = get_oneInch_swap_data(
+                matic_address, usdc_address, current_matic_1Inch-initial_matic_1inch)
+            sell_order = signAndSendTransaction(sell_order_data)
+    elif current_matic_1Inch < initial_matic_1inch:
+        logger.info('Rebalancing by Buying MATIC on 1Inch')
+        if production:
+            buy_order_data = get_oneInch_swap_data(
+                usdc_address, matic_address, last_oneInch_market_price * (initial_matic_1inch-current_matic_1Inch) * (10**6))
+            buy_order = signAndSendTransaction(buy_order_data)
+    pass
 
 
 # establish web3 connection
 w3 = connect_to_ETH_provider()
 
-min_percent = 1
-
-
-def check_arbitrage():
-    logger.info('last_oneInch_market_price * 1.01: {0}'.format(
-        last_oneInch_market_price * (1 + min_percent/100)))
-    logger.info('last_oneInch_ask_price * 0.99: {0}'.format(
-        last_oneInch_market_price * (1 - min_percent/100)))
-    logger.info('Checking for arbitrage opportunities')
-    if last_alpaca_ask_price > last_oneInch_market_price * (1 + min_percent/100):
-        logger.info('Selling on ALPACA, Buying on 1Inch')
-        # logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
-        # logger.info('1Inch Price: {0}'.format(last_oneInch_market_price))
-    elif last_alpaca_ask_price < last_oneInch_market_price * (1 - min_percent/100):
-        logger.info('Buying on ALPACA, Selling on 1Inch')
-        # logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
-        # logger.info('1Inch Price: {0}'.format(last_oneInch_market_price))
-    pass
+initial_matic_alpaca = get_positions()
+initial_matic_1inch = Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')
 
 
 loop = asyncio.get_event_loop()
