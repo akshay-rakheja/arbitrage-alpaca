@@ -380,6 +380,7 @@ def rebalancing():
 # establish web3 connection
 w3 = connect_to_ETH_provider()
 
+# Initial Matic Balance on Alpaca and 1Inch
 initial_matic_alpaca = get_positions()
 initial_matic_1inch = Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')
 
@@ -390,28 +391,3 @@ loop.close()
 # run it!
 # if __name__ == '__main__':
 #     main()
-
-
-#-----------------#
-# Here are some examples of single methods/functions being executed
-#-----------------#
-
-# Get a trade quote directly from the blockchain
-# response is a list like: [1533867641279495750, [0, 95, 5, 0, 0, 0, 0, 0, 0, 0]]
-# where first item is amount, second is a list of how your order will be distributed across exchanges
-# logger.info(one_inch_get_quote(ethereum, mcd_contract_address, amount_to_exchange))
-
-#--- Making an Approval ---#
-# check if MCD contract has allowance for provided account to spend tokens
-# get_allowance(base_account)
-
-# This will approve the one inch split contract to spend to spend amount_of_dai worth of base_account's tokens
-# you will need to call this before trading your MCD/DAI on 1 inch. Will cost a small bit of ETH/gas
-# approve_ERC20(amount_of_dai)
-
-# check MCD again to confirm approval worked
-# get_allowance(base_account)
-
-#--- Using API to get data and make trades ---#
-# get_api_quote_data("DAI", "ETH", amount_to_exchange)
-# get_api_call_data("DAI", "ETH", amount_to_exchange)
