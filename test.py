@@ -206,6 +206,29 @@ def get_open_orders():
     return open_orders.json()
 
 
+def get_positions():
+    '''
+    Get positions
+    '''
+    try:
+        positions = requests.get(
+            '{0}/v2/positions'.format(BASE_URL), headers=HEADERS)
+        logger.info('Alpaca positions reply status code: {0}'.format(
+            positions.status_code))
+        if positions.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(positions.json()))
+            return False
+        # positions = positions[0]
+        matic_position = positions.json()[0]['qty']
+        logger.info('Matic Position on Alpaca: {0}'.format(matic_position))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting positions from Alpaca: {0}".format(e))
+        return False
+    return matic_position
+
+
 def post_order(symbol, qty, side, type, time_in_force):
     '''
     Post an order to Alpaca
