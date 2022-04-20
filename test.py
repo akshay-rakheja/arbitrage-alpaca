@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from cmath import log
 import requests
 import logging
 import json
@@ -28,6 +29,10 @@ waitTime = 5
 
 # OneInch API
 BASE_URL = 'https://api.1inch.io/v4.0/137'
+
+# Alpaca URL
+BASE_ALPACA_URL = 'https://paper-api.alpaca.markets'
+
 # if MATIC --> USDC - (enter the amount in units Ether)
 amount_to_exchange = Web3.toWei(1, 'ether')
 
@@ -77,8 +82,10 @@ async def main():
         l1 = loop.create_task(get_oneInch_quote_data(
             matic_address, usdc_address, amount_to_exchange))
         l2 = loop.create_task(get_Alpaca_quote_data(trading_pair, exchange))
+        # print(last_alpaca_ask_price)
         # Wait for the tasks to finish
         await asyncio.wait([l1, l2])
+        check_arbitrage()
         # Wait for the a certain amount of time between each quote request
         await asyncio.sleep(waitTime)
     # print("matic price is :", matic_price['quote']['ap'])
@@ -106,6 +113,7 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
         # logger.info(
         #     "Undesirable response from 1 Inch! This is probably bad.")
         # return False
+        global last_oneInch_market_price
         last_oneInch_market_price = int(quote.json()['toTokenAmount'])/10**6
         logger.info('OneInch Price: {0}'.format(last_oneInch_market_price))
     except Exception as e:
@@ -113,7 +121,7 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
             "There was an issue getting trade quote from 1 Inch: {0}".format(e))
         return False
 
-    return quote.json()
+    return last_oneInch_market_price
 
 
 async def get_Alpaca_quote_data(trading_pair, exchange):
@@ -129,6 +137,7 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
         #     logger.info(
         #         "Undesirable response from Alpaca! {}".format(quote.json()))
         #     return False
+        global last_alpaca_ask_price
         last_alpaca_ask_price = quote.json()['quote']['ap']
         logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
     except Exception as e:
@@ -136,7 +145,7 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
             "There was an issue getting trade quote from Alpaca: {0}".format(e))
         return False
 
-    return quote.json()
+    return last_alpaca_ask_price
 
 
 async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
@@ -176,6 +185,54 @@ async def get_oneInch_swap_data(_from_coin, _to_coin, _amount_to_exchange):
     return tx
 
 
+def get_open_orders():
+    '''
+    Get open orders
+    '''
+    try:
+        open_orders = requests.get(
+            '{0}/v2/orders'.format(BASE_URL), headers=HEADERS)
+        logger.info('Alpaca open orders reply status code: {0}'.format(
+            open_orders.status_code))
+        if open_orders.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(open_orders.json()))
+            return False
+        logger.info('get_open_orders: {0}'.format(open_orders.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting open orders from Alpaca: {0}".format(e))
+        return False
+    return open_orders.json()
+
+
+def post_order(symbol, qty, side, type, time_in_force):
+    '''
+    Post an order to Alpaca
+    '''
+    try:
+        order = requests.post(
+            '{0}/v2/orders'.format(BASE_ALPACA_URL), headers=HEADERS, json={
+                'symbol': symbol,
+                'qty': qty,
+                'side': side,
+                'type': type,
+                'time_in_force': time_in_force,
+            })
+        logger.info('Alpaca order reply status code: {0}'.format(
+            order.status_code))
+        if order.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(order.json()))
+            return False
+        logger.info('post_order: {0}'.format(order.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue posting order to Alpaca: {0}".format(e))
+        return False
+    return order.json()
+
+
 # Establish connection to the WEB3 provider
 def connect_to_ETH_provider():
     try:
@@ -197,8 +254,23 @@ def signAndSendTransaction(transaction_data):
 # establish web3 connection
 w3 = connect_to_ETH_provider()
 
+min_percent = 1
 
-async def check_arbitrage():
+
+def check_arbitrage():
+    logger.info('last_oneInch_market_price * 1.01: {0}'.format(
+        last_oneInch_market_price * (1 + min_percent/100)))
+    logger.info('last_oneInch_ask_price * 0.99: {0}'.format(
+        last_oneInch_market_price * (1 - min_percent/100)))
+    logger.info('Checking for arbitrage opportunities')
+    if last_alpaca_ask_price > last_oneInch_market_price * (1 + min_percent/100):
+        logger.info('Selling on ALPACA, Buying on 1Inch')
+        # logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
+        # logger.info('1Inch Price: {0}'.format(last_oneInch_market_price))
+    elif last_alpaca_ask_price < last_oneInch_market_price * (1 - min_percent/100):
+        logger.info('Buying on ALPACA, Selling on 1Inch')
+        # logger.info('Alpaca Price: {0}'.format(last_alpaca_ask_price))
+        # logger.info('1Inch Price: {0}'.format(last_oneInch_market_price))
     pass
 
 
