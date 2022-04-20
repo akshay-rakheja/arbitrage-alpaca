@@ -1,3 +1,5 @@
+from turtle import pos
+from webbrowser import get
 from wsgiref.headers import Headers
 from alpaca_trade_api.rest import REST, TimeFrame
 import config
@@ -12,13 +14,13 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
-              'https://paper-api.alpaca.markets')
+# alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
+#               'https://paper-api.alpaca.markets')
 
 HEADERS = {'APCA-API-KEY-ID': config.APCA_API_KEY_ID,
            'APCA-API-SECRET-KEY': config.APCA_API_SECRET_KEY}
 
-
+BASE_URL = 'https://paper-api.alpaca.markets'
 trading_pair = 'MATICUSD'  # Checking quotes and trading MATIC against USD
 exchange = 'FTXU'  # FTXUS
 DATA_URL = 'https://data.alpaca.markets'
@@ -47,6 +49,98 @@ def get_api_quote_data(trading_pair, exchange):
     return quote.json()
 
 
+def get_account_details():
+    '''
+    Get Alpaca Trading Account Details
+    '''
+    try:
+        account = requests.get(
+            '{0}/v2/account'.format(BASE_URL), headers=HEADERS)
+        logger.info('Alpaca account reply status code: {0}'.format(
+            account.status_code))
+        if account.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(account.json()))
+            return False
+        logger.info('get_account_details: {0}'.format(account.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting account details from Alpaca: {0}".format(e))
+        return False
+    return account.json()
+
+
+def get_open_orders():
+    '''
+    Get open orders
+    '''
+    try:
+        open_orders = requests.get(
+            '{0}/v2/orders'.format(BASE_URL), headers=HEADERS)
+        logger.info('Alpaca open orders reply status code: {0}'.format(
+            open_orders.status_code))
+        if open_orders.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(open_orders.json()))
+            return False
+        logger.info('get_open_orders: {0}'.format(open_orders.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting open orders from Alpaca: {0}".format(e))
+        return False
+    return open_orders.json()
+
+
+def get_positions():
+    '''
+    Get positions
+    '''
+    try:
+        positions = requests.get(
+            '{0}/v2/positions'.format(BASE_URL), headers=HEADERS)
+        logger.info('Alpaca positions reply status code: {0}'.format(
+            positions.status_code))
+        if positions.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(positions.json()))
+            return False
+        # positions = positions[0]
+        matic_position = positions.json()[0]['qty']
+        logger.info('Matic Position on Alpaca: {0}'.format(matic_position))
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting positions from Alpaca: {0}".format(e))
+        return False
+    return matic_position
+
+
+def post_order(symbol, qty, side, type, time_in_force):
+    '''
+    Post an order to Alpaca
+    '''
+    try:
+        order = requests.post(
+            '{0}/v2/orders'.format(BASE_URL), headers=HEADERS, json={
+                'symbol': symbol,
+                'qty': qty,
+                'side': side,
+                'type': type,
+                'time_in_force': time_in_force,
+            })
+        logger.info('Alpaca order reply status code: {0}'.format(
+            order.status_code))
+        if order.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(order.json()))
+            return False
+        logger.info('post_order: {0}'.format(order.json()))
+    except Exception as e:
+        logger.exception(
+            "There was an issue posting order to Alpaca: {0}".format(e))
+        return False
+    return order.json()
+
+
 def main():
     '''
     These are examples of different functions in the script.
@@ -55,10 +149,24 @@ def main():
     # get price quote for 1 ETH in DAI right now
     # matic_price = one_inch_get_quote(
     #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
-    while True:
-        matic_price = get_api_quote_data(trading_pair, exchange)
-        print("matic price is :", matic_price['quote']['ap'])
-        time.sleep(2)
+    # while True:
+    matic_price = get_api_quote_data(trading_pair, exchange)
+    print("matic price is :", matic_price['quote']['ap'])
+    # print("Account details are: ", get_account_details())
+    print("Cash balance is: ", get_account_details()['cash'])
+    # print("Open orders are: ", get_open_orders())
+    if(get_open_orders()):
+        print("Open orders are: ", get_open_orders())
+    else:
+        print("No open orders")
+
+    get_positions()
+    # buying_matic = post_order(trading_pair, 10, 'buy', 'market', 'gtc')
+    # print("Buying matic order response: ", buying_matic)
+
+    # selling_matic = post_order(trading_pair, 20, 'buy', 'market', 'gtc')
+    # print("Selling matic order response: ", selling_matic)
+    # time.sleep(2)
 
 
 # in_position_quantity = 0
@@ -200,6 +308,5 @@ def main():
 #     #     print('LULD', luld)
 
 #     stream.run()
-
 if __name__ == "__main__":
     main()
