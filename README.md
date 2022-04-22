@@ -1,2 +1,3 @@
 # arbitrage-alpaca
 DEX-CEX Arbitrage
+https://dev.to/akshayrakheja/dex-vs-cex-arbitrage-38n5-temp-slug-1746103?preview=983d78ba6e091d7e7a109a5ce24437002d07ded58567f62d5029ea03871fd50970cf49cf78687c9f0dfd4527be7b50e26e7c4fb19d86db9a427d98f7
