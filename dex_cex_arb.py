@@ -1,21 +1,10 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-from cmath import log
 import requests
 import logging
 import json
-import os
 from web3 import Web3
-from wsgiref.headers import Headers
-from alpaca_trade_api.rest import REST, TimeFrame
 import config
 import logging
-from multiprocessing import Process
-import time
 import asyncio
-
-# import web3
 
 
 # ENABLE LOGGING - options, DEBUG,INFO, WARNING?
@@ -23,10 +12,16 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-production = False  # False to prevent any public TX from being sent
+# Flag if set to True, will execute live trades
+production = False
+
+# Permitable slippage
 slippage = 1
+
+# Seconds to wait between each quote request
 waitTime = 5
 
+# Minimum percentage between prices to trigger arbitrage
 min_arb_percent = 0.5
 
 
@@ -72,39 +67,31 @@ async def main():
     These are examples of different functions in the script.
     Uncomment the command you want to run.
     '''
-    # get price quote for 1 ETH in DAI right now
-    # matic_price = one_inch_get_quote(
-    #     ethereum, mcd_contract_address, Web3.toWei(1, 'ether'))
+    # Accessing the usdc contract on polygon using Web3 Library
     usdc_token = w3.eth.contract(address=usdc_address, abi=usdc_contract_abi)
+    # Log the current balance of the usdc token for our wallet_address
     usdc_balance = usdc_token.functions.balanceOf(wallet_address).call()
 
+    # Log the current balance of the MATIC token in our Alpaca account
     logger.info('Matic Position on Alpaca: {0}'.format(get_positions()))
+    # Log the current Cash Balance (USD) in our Alpaca account
     logger.info("USD position on Alpaca: {0}".format(
         get_account_details()['cash']))
+    # Log the current balance of MATIC token in our wallet_address
     logger.info('Matic Position on 1 Inch: {0}'.format(
         Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')))
+    # Log the current balance of USDC token in our wallet_address. We
     logger.info('USD Position on 1 Inch: {0}'.format(usdc_balance/10**6))
 
     while True:
         l1 = loop.create_task(get_oneInch_quote_data(
             matic_address, usdc_address, amount_to_exchange))
         l2 = loop.create_task(get_Alpaca_quote_data(trading_pair, exchange))
-        # print(last_alpaca_ask_price)
         # Wait for the tasks to finish
         await asyncio.wait([l1, l2])
         check_arbitrage()
         # Wait for the a certain amount of time between each quote request
         await asyncio.sleep(waitTime)
-    # print("matic price is :", matic_price['quote']['ap'])
-    # time.sleep(2)
-    # while True:
-    #     matic_price_oneInch = get_oneInch_quote_data(
-    #         matic_address, usdc_address, amount_to_exchange)
-    #     print("matic price on OneInch is :", float(
-    #         matic_price_oneInch['toTokenAmount'])/10**6, "USDC")
-    #     matic_price_alpaca = get_Alpaca_quote_data(trading_pair, exchange)
-    #     print("matic price on Alpaca is :", matic_price_alpaca['quote']['ap'])
-    #     time.sleep(2)
 
 
 async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
@@ -236,6 +223,8 @@ def get_open_orders():
         return False
     return open_orders.json()
 
+# Get current MATIC position on Alpaca
+
 
 def get_positions():
     '''
@@ -260,6 +249,7 @@ def get_positions():
     return matic_position
 
 
+# Post and Order to Alpaca
 def post_Alpaca_order(symbol, qty, side, type, time_in_force):
     '''
     Post an order to Alpaca
@@ -310,9 +300,8 @@ def signAndSendTransaction(transaction_data):
             "There is an issue sending transaction to the blockchain: {0}".format(e))
     return tx_hash
 
+
 # Check for Arbitrage opportunities
-
-
 def check_arbitrage():
     logger.info('Checking for arbitrage opportunities')
     # print(last_alpaca_ask_price)

@@ -14,9 +14,6 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-# alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
-#               'https://paper-api.alpaca.markets')
-
 HEADERS = {'APCA-API-KEY-ID': config.APCA_API_KEY_ID,
            'APCA-API-SECRET-KEY': config.APCA_API_SECRET_KEY}
 
@@ -24,6 +21,9 @@ BASE_URL = 'https://paper-api.alpaca.markets'
 trading_pair = 'MATICUSD'  # Checking quotes and trading MATIC against USD
 exchange = 'FTXU'  # FTXUS
 DATA_URL = 'https://data.alpaca.markets'
+
+alpaca = REST(config.APCA_API_KEY_ID, config.APCA_API_SECRET_KEY,
+              BASE_URL, DATA_URL)
 
 
 def get_api_quote_data(trading_pair, exchange):
@@ -161,6 +161,8 @@ def main():
         print("No open orders")
 
     get_positions()
+    print(alpaca.get_latest_crypto_xbbo(trading_pair))
+
     # buying_matic = post_order(trading_pair, 10, 'buy', 'market', 'gtc')
     # print("Buying matic order response: ", buying_matic)
 
