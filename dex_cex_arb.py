@@ -98,19 +98,24 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
     '''
     Get trade quote data from 1Inch API
     '''
+    # Try to get a quote from 1Inch
     try:
+        # Get the current quote response for the trading pair (MATIC/USDC)
         quote = requests.get(
             '{0}/quote?fromTokenAddress={1}&toTokenAddress={2}&amount={3}'.format(BASE_URL, _from_coin, _to_coin, _amount_to_exchange))
-        # logger.info('1inch quote reply status code: {0}'.format(
-        # quote.status_code))
-        # if quote.status_code != 200:
-        # logger.info(
-        #     "Undesirable response from 1 Inch! This is probably bad.")
-        # return False
+        # Status code 200 means the request was successful
+        if quote.status_code != 200:
+            logger.info(
+                "Undesirable response from 1 Inch! This is probably bad.")
+            return False
+        # Refer to the global variable we initialized earlier
         global last_oneInch_market_price
+        # Get the current quoted price from the quote response in terms USDC (US Dollar)
         last_oneInch_market_price = int(quote.json()['toTokenAmount'])/10**6
+        # Log the current quote of MATIC/USDC
         logger.info('OneInch Price for 10 MATIC: {0}'.format(
             last_oneInch_market_price))
+    # If there is an error, log it
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from 1 Inch: {0}".format(e))
