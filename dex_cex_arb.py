@@ -334,15 +334,15 @@ def check_arbitrage():
             if sell_order['status'] == 'accepted':
                 global alpaca_trade_counter
                 alpaca_trade_counter -= 1
-            # ---- Might want to add it under the above if statement----
-            # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
-            buy_order_data = get_oneInch_swap_data(
-                usdc_address, matic_address, last_oneInch_market_price*amount_of_usdc_to_trade)
-            buy_order = signAndSendTransaction(buy_order_data)
-            if buy_order == True:
-                global oneInch_trade_counter
-                oneInch_trade_counter += 1
-    # if the current price at alpaca is less than the current price at 1inch by a given arb % and we do not need a rebalnce
+                # Only buy on oneInch if our sell txn on alpaca goes through
+                # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
+                buy_order_data = get_oneInch_swap_data(
+                    usdc_address, matic_address, last_oneInch_market_price*amount_of_usdc_to_trade)
+                buy_order = signAndSendTransaction(buy_order_data)
+                if buy_order == True:
+                    global oneInch_trade_counter
+                    oneInch_trade_counter += 1
+    # If the current price at alpaca is less than the current price at 1inch by a given arb % and we do not need a rebalnce
     # then we have an arbitrage opportunity. In this case we will buy on Alpaca and sell on 1Inch
     elif (last_alpaca_ask_price < last_oneInch_market_price * (1 - min_arb_percent/100) and rebalance != True):
         logger.info('Buying on ALPACA, Selling on 1Inch')
@@ -353,20 +353,40 @@ def check_arbitrage():
             if buy_order['status'] == 'accepted':
                 global alpaca_trade_counter
                 alpaca_trade_counter += 1
-            # ---- Might want to add it under the above if statement----
-            # To sell 10 MATIC, we pass it amount to exchnage
-            sell_order_data = get_oneInch_swap_data(
-                matic_address, usdc_address, amount_to_exchange)
-            sell_order = signAndSendTransaction(sell_order_data)
-            if sell_order == True:
-                global oneInch_trade_counter
-                oneInch_trade_counter -= 1
-    # If neither of the above conditions are met then we either no arbitrage opportunity is found and/or we need to rebalance
+                # Only sell on oneInch if our buy txn on alpaca goes through
+                # To sell 10 MATIC, we pass it amount to exchnage
+                sell_order_data = get_oneInch_swap_data(
+                    matic_address, usdc_address, amount_to_exchange)
+                sell_order = signAndSendTransaction(sell_order_data)
+                if sell_order == True:
+                    global oneInch_trade_counter
+                    oneInch_trade_counter -= 1
+    # If neither of the above conditions are met then either there is no arbitrage opportunity found and/or we need to rebalance
     else:
-        logger.info('No arbitrage opportunity available')
         if rebalance:
             rebalancing()
+        else:
+            logger.info('No arbitrage opportunity available')
     pass
+
+# Function to check if we need to rebalance -> might need to add more conditions here
+
+
+def needs_rebalancing():
+    # Get current MATIC positions on both exchanges
+    current_matic_alpaca = int(get_positions())
+    current_matic_1Inch = int(Web3.fromWei(
+        w3.eth.getBalance(wallet_address), 'ether'))
+    # If the current amount of MATIC on Alpaca minus the trade size (10) is greater than 0 then we are good enough to trade on Alpaca
+    if current_matic_alpaca - 10 < 0 or current_matic_1Inch - 10 < 0:
+        logger.info(
+            'We will have less than 10 MATIC on one of the exchanges if we trade. We need to rebalance.')
+        return True
+    # If the current trade counter on Alpaca and 1Inch is not 0 then we need to rebalance
+    if alpaca_trade_counter != 0 or oneInch_trade_counter != 0:
+        logger.info("We need to rebalance our positions")
+        return True
+    return False
 
 
 # Rebalance Portfolio
@@ -376,57 +396,50 @@ def rebalancing():
     current_matic_alpaca = get_positions()
     current_matic_1Inch = Web3.fromWei(
         w3.eth.getBalance(wallet_address), 'ether')
-    # If the current amount of matic on alpaca is greater than the initial amount of matic on alpaca then we need to sell some matic
-    # but we can only trade MATIC in multiples of 10 on Alpaca and we need to ensure we don't sell more so we can still trade on Alpaca
-    if (current_matic_alpaca > initial_matic_alpaca and current_matic_alpaca > 20):
-        logger.info('Rebalancing by Selling MATIC on ALPACA')
-        if production:
-            sell_order = post_Alpaca_order(
-                trading_pair, current_matic_alpaca-initial_matic_alpaca, 'sell', 'market', 'gtc')
-    elif current_matic_alpaca < initial_matic_alpaca:
-        logger.info('Rebalancing by Buying MATIC on ALPACA')
-        if production:
-            buy_order = post_Alpaca_order(
-                trading_pair, initial_matic_alpaca-current_matic_alpaca, 'buy', 'market', 'gtc')
+    # Only execute rebalancing trades if production is true (we are live)
+    if production:
+        if (current_matic_alpaca - 10 > 0 and alpaca_trade_counter != 0):
+            if alpaca_trade_counter > 0:
+                logger.info('Rebalancing Alpaca side by selling on Alpaca')
+                sell_order = post_Alpaca_order(
+                    trading_pair, 10, 'sell', 'market', 'gtc')
+                if sell_order['status'] == 'accepted':
+                    global alpaca_trade_counter
+                    alpaca_trade_counter -= 1
+            else:
+                logger.info('Rebalancing Alpaca side by buying on Alpaca')
+                buy_order = post_Alpaca_order(
+                    trading_pair, 10, 'buy', 'market', 'gtc')
+                if buy_order['status'] == 'accepted':
+                    global alpaca_trade_counter
+                    alpaca_trade_counter += 1
 
-    if current_matic_1Inch > initial_matic_1inch:
-        logger.info('Rebalancing by Selling MATIC on 1Inch')
-        if production:
-            sell_order_data = get_oneInch_swap_data(
-                matic_address, usdc_address, current_matic_1Inch-initial_matic_1inch)
-            sell_order = signAndSendTransaction(sell_order_data)
-    elif current_matic_1Inch < initial_matic_1inch:
-        logger.info('Rebalancing by Buying MATIC on 1Inch')
-        if production:
-            buy_order_data = get_oneInch_swap_data(
-                usdc_address, matic_address, last_oneInch_market_price * (initial_matic_1inch-current_matic_1Inch) * (10**6))
-            buy_order = signAndSendTransaction(buy_order_data)
+        if current_matic_alpaca - 10 < 0 and alpaca_trade_counter != 0:
+            logger.info(
+                'Unable to rebalance Alpaca side due to insufficient funds')
+
+        if current_matic_1Inch - 10 > 0 and oneInch_trade_counter != 0:
+            if oneInch_trade_counter > 0:
+                logger.info('Rebalancing oneInch side by selling on oneInch')
+                sell_order_data = get_oneInch_swap_data(
+                    matic_address, usdc_address, amount_to_exchange)
+                sell_order = signAndSendTransaction(sell_order_data)
+                if sell_order == True:
+                    global oneInch_trade_counter
+                    oneInch_trade_counter -= 1
+            else:
+                logger.info('Rebalancing oneInch side by buying on oneInch')
+                buy_order_data = get_oneInch_swap_data(
+                    matic_address, usdc_address, amount_to_exchange)
+                buy_order = signAndSendTransaction(buy_order_data)
+                if sell_order == True:
+                    global oneInch_trade_counter
+                    oneInch_trade_counter += 1
+        if current_matic_1Inch - 10 < 0 and oneInch_trade_counter != 0:
+            logger.info(
+                'Unable to rebalance oneInch side due to insufficient funds')
+
     pass
-
-
-def needs_rebalancing():
-    # Get current MATIC positions on both exchanges
-    current_matic_alpaca = get_positions()
-    current_matic_1Inch = Web3.fromWei(
-        w3.eth.getBalance(wallet_address), 'ether')
-    # If the current amount of matic on alpaca is greater than the initial amount of matic on alpaca then we need to sell some matic
-    # but we can only trade MATIC in multiples of 10 on Alpaca and we need to ensure we don't sell more so we can still trade on Alpaca
-    if current_matic_alpaca % 10 != 0:
-        logger.info("We have enough matic on alpaca to trade")
-
-    if (current_matic_alpaca > initial_matic_alpaca and current_matic_alpaca > 20):
-        logger.info('Rebalancing by Selling MATIC on ALPACA')
-        return True
-    elif current_matic_alpaca < initial_matic_alpaca:
-        logger.info('Rebalancing by Buying MATIC on ALPACA')
-        return True
-    elif current_matic_1Inch > initial_matic_1inch:
-        logger.info('Rebalancing by Selling MATIC on 1Inch')
-        return True
-    elif current_matic_1Inch < initial_matic_1inch:
-        logger.info('Rebalancing by Buying MATIC on 1Inch')
-        return True
-    return False
 
 
 # establish web3 connection
