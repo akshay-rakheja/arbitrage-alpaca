@@ -61,6 +61,8 @@ exchange = 'FTXU'  # FTXUS
 
 last_alpaca_ask_price = 0
 last_oneInch_market_price = 0
+alpaca_trade_counter = 0
+oneInch_trade_counter = 0
 
 
 async def main():
@@ -323,6 +325,8 @@ async def signAndSendTransaction(transaction_data):
 def check_arbitrage():
     logger.info('Checking for arbitrage opportunities')
     rebalance = needs_rebalancing()
+    global alpaca_trade_counter
+    global oneInch_trade_counter
     # if the current price at alpaca is greater than the current price at 1inch by a given arb % and we do not need a rebalnce
     # then we have an arbitrage opportunity. In this case we will buy on 1Inch and sell on Alpaca
     if (last_alpaca_ask_price > last_oneInch_market_price * (1 + min_arb_percent/100) and rebalance != True):
@@ -332,7 +336,6 @@ def check_arbitrage():
                 trading_pair, trade_size, 'sell', 'market', 'gtc')
             # if the above sell order goes through we will subtract 1 from alpaca trade counter
             if sell_order['status'] == 'accepted':
-                global alpaca_trade_counter
                 alpaca_trade_counter -= 1
                 # Only buy on oneInch if our sell txn on alpaca goes through
                 # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
@@ -340,7 +343,6 @@ def check_arbitrage():
                     usdc_address, matic_address, last_oneInch_market_price*amount_of_usdc_to_trade)
                 buy_order = signAndSendTransaction(buy_order_data)
                 if buy_order == True:
-                    global oneInch_trade_counter
                     oneInch_trade_counter += 1
     # If the current price at alpaca is less than the current price at 1inch by a given arb % and we do not need a rebalnce
     # then we have an arbitrage opportunity. In this case we will buy on Alpaca and sell on 1Inch
@@ -351,7 +353,6 @@ def check_arbitrage():
                 trading_pair, 10, 'buy', 'market', 'gtc')
             # if the above buy order goes through we will add 1 to alpaca trade counter
             if buy_order['status'] == 'accepted':
-                global alpaca_trade_counter
                 alpaca_trade_counter += 1
                 # Only sell on oneInch if our buy txn on alpaca goes through
                 # To sell 10 MATIC, we pass it amount to exchnage
@@ -359,7 +360,6 @@ def check_arbitrage():
                     matic_address, usdc_address, amount_to_exchange)
                 sell_order = signAndSendTransaction(sell_order_data)
                 if sell_order == True:
-                    global oneInch_trade_counter
                     oneInch_trade_counter -= 1
     # If neither of the above conditions are met then either there is no arbitrage opportunity found and/or we need to rebalance
     else:
@@ -392,6 +392,9 @@ def needs_rebalancing():
 # Rebalance Portfolio
 def rebalancing():
     logger.info('Rebalancing')
+    global alpaca_trade_counter
+    global oneInch_trade_counter
+
     # Get current MATIC positions on both exchanges
     current_matic_alpaca = get_positions()
     current_matic_1Inch = Web3.fromWei(
@@ -404,14 +407,12 @@ def rebalancing():
                 sell_order = post_Alpaca_order(
                     trading_pair, 10, 'sell', 'market', 'gtc')
                 if sell_order['status'] == 'accepted':
-                    global alpaca_trade_counter
                     alpaca_trade_counter -= 1
             else:
                 logger.info('Rebalancing Alpaca side by buying on Alpaca')
                 buy_order = post_Alpaca_order(
                     trading_pair, 10, 'buy', 'market', 'gtc')
                 if buy_order['status'] == 'accepted':
-                    global alpaca_trade_counter
                     alpaca_trade_counter += 1
 
         if current_matic_alpaca - 10 < 0 and alpaca_trade_counter != 0:
@@ -425,7 +426,6 @@ def rebalancing():
                     matic_address, usdc_address, amount_to_exchange)
                 sell_order = signAndSendTransaction(sell_order_data)
                 if sell_order == True:
-                    global oneInch_trade_counter
                     oneInch_trade_counter -= 1
             else:
                 logger.info('Rebalancing oneInch side by buying on oneInch')
@@ -433,7 +433,6 @@ def rebalancing():
                     matic_address, usdc_address, amount_to_exchange)
                 buy_order = signAndSendTransaction(buy_order_data)
                 if sell_order == True:
-                    global oneInch_trade_counter
                     oneInch_trade_counter += 1
         if current_matic_1Inch - 10 < 0 and oneInch_trade_counter != 0:
             logger.info(
@@ -448,9 +447,6 @@ w3 = connect_to_ETH_provider()
 # Initial Matic Balance on Alpaca and 1Inch
 initial_matic_alpaca = get_positions()
 initial_matic_1inch = Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')
-
-alpaca_trade_counter = 0
-oneInch_trade_counter = 0
 
 
 loop = asyncio.get_event_loop()
