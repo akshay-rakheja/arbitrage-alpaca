@@ -31,6 +31,7 @@ BASE_URL = 'https://api.1inch.io/v4.0/137'
 # if MATIC --> USDC - (enter the amount in units Ether)
 trade_size = 10
 amount_to_exchange = Web3.toWei(trade_size, 'ether')
+amount_of_usdc_to_trade = trade_size * 10**6
 
 matic_address = Web3.toChecksumAddress(
     '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE')  # MATIC Token Contract address on Polygon Network
@@ -128,20 +129,25 @@ async def get_Alpaca_quote_data(trading_pair, exchange):
     '''
     Get trade quote data from Alpaca API
     '''
+    # Try to get a quote from 1Inch
     try:
+        # Get the current quote response for the trading pair (MATIC/USDC)
         quote = requests.get(
             '{0}/v1beta1/crypto/{1}/quotes/latest?exchange={2}'.format(DATA_URL, trading_pair, exchange), headers=HEADERS)
-        # logger.info('Alpaca quote reply status code: {0}'.format(
-        # quote.status_code))
-        # if quote.status_code != 200:
-        #     logger.info(
-        #         "Undesirable response from Alpaca! {}".format(quote.json()))
-        #     return False
+        # Status code 200 means the request was successful
+        if quote.status_code != 200:
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(quote.json()))
+            return False
+        # Refer to the global variable we initialized earlier
         global last_alpaca_ask_price
+        # Get the latest quoted asking price from the quote response in terms US Dollar
         last_alpaca_ask_price = quote.json(
         )['quote']['ap'] * 10  # for 10 MATIC
+        # Log the latest quote of MATICUSD
         logger.info('Alpaca Price for 10 MATIC: {0}'.format(
             last_alpaca_ask_price))
+    # If there is an error, log it
     except Exception as e:
         logger.exception(
             "There was an issue getting trade quote from Alpaca: {0}".format(e))
@@ -274,15 +280,15 @@ def post_Alpaca_order(symbol, qty, side, type, time_in_force):
             logger.info(
                 "Undesirable response from Alpaca! {}".format(order.json()))
             return False
-        # logger.info('post_Alpaca_order: {0}'.format(order.json()))
     except Exception as e:
         logger.exception(
             "There was an issue posting order to Alpaca: {0}".format(e))
         return False
     return order.json()
 
-
 # Establish connection to the WEB3 provider
+
+
 def connect_to_ETH_provider():
     try:
         web3 = Web3(Web3.HTTPProvider(eth_provider_url))
@@ -294,58 +300,85 @@ def connect_to_ETH_provider():
 
 
 # Sign and send txns to the blockchain
-def signAndSendTransaction(transaction_data):
+async def signAndSendTransaction(transaction_data):
     try:
         txn = w3.eth.account.signTransaction(transaction_data, private_key)
         tx_hash = w3.eth.sendRawTransaction(txn.rawTransaction)
         logger.info(
-            'TXN can be found at https://polygonscan.com/tx/{0}'.format(Web3.toHex(tx_hash)))
+            '1Inch Txn can be found at https://polygonscan.com/tx/{0}'.format(Web3.toHex(tx_hash)))
+        tx_receipt = await w3.eth.wait_for_transaction_receipt(Web3.toHex(tx_hash))
+        if tx_receipt.json()['status'] == 1:
+            logger.info('1Inch Transaction went through!')
+            return True
+        else:
+            logger.info("1Inch Transaction failed!")
+            return False
     except Exception as e:
         logger.warning(
             "There is an issue sending transaction to the blockchain: {0}".format(e))
-    return tx_hash
+    return False
 
 
 # Check for Arbitrage opportunities
 def check_arbitrage():
     logger.info('Checking for arbitrage opportunities')
-    # print(last_alpaca_ask_price)
-    # print(last_oneInch_market_price)
-    if (last_alpaca_ask_price > last_oneInch_market_price * (1 + min_arb_percent/100)):
+    rebalance = needs_rebalancing()
+    # if the current price at alpaca is greater than the current price at 1inch by a given arb % and we do not need a rebalnce
+    # then we have an arbitrage opportunity. In this case we will buy on 1Inch and sell on Alpaca
+    if (last_alpaca_ask_price > last_oneInch_market_price * (1 + min_arb_percent/100) and rebalance != True):
         logger.info('Selling on ALPACA, Buying on 1Inch')
         if production:
             sell_order = post_Alpaca_order(
-                trading_pair, 10, 'sell', 'market', 'gtc')
-            logger.info('Selling on ALPACA Status: {0}'.format(
-                sell_order['status']))
+                trading_pair, trade_size, 'sell', 'market', 'gtc')
+            # if the above sell order goes through we will subtract 1 from alpaca trade counter
+            if sell_order['status'] == 'accepted':
+                global alpaca_trade_counter
+                alpaca_trade_counter -= 1
+            # ---- Might want to add it under the above if statement----
+            # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
             buy_order_data = get_oneInch_swap_data(
-                usdc_address, matic_address, last_oneInch_market_price*amount_to_exchange * (10**6))  # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
+                usdc_address, matic_address, last_oneInch_market_price*amount_of_usdc_to_trade)
             buy_order = signAndSendTransaction(buy_order_data)
-    elif last_alpaca_ask_price < last_oneInch_market_price * (1 - min_arb_percent/100):
+            if buy_order == True:
+                global oneInch_trade_counter
+                oneInch_trade_counter += 1
+    # if the current price at alpaca is less than the current price at 1inch by a given arb % and we do not need a rebalnce
+    # then we have an arbitrage opportunity. In this case we will buy on Alpaca and sell on 1Inch
+    elif (last_alpaca_ask_price < last_oneInch_market_price * (1 - min_arb_percent/100) and rebalance != True):
         logger.info('Buying on ALPACA, Selling on 1Inch')
         if production:
             buy_order = post_Alpaca_order(
                 trading_pair, 10, 'buy', 'market', 'gtc')
-            logger.info('Buying on ALPACA Status: {0}'.format(
-                buy_order['status']))
+            # if the above buy order goes through we will add 1 to alpaca trade counter
+            if buy_order['status'] == 'accepted':
+                global alpaca_trade_counter
+                alpaca_trade_counter += 1
+            # ---- Might want to add it under the above if statement----
+            # To sell 10 MATIC, we pass it amount to exchnage
             sell_order_data = get_oneInch_swap_data(
                 matic_address, usdc_address, amount_to_exchange)
             sell_order = signAndSendTransaction(sell_order_data)
+            if sell_order == True:
+                global oneInch_trade_counter
+                oneInch_trade_counter -= 1
+    # If neither of the above conditions are met then we either no arbitrage opportunity is found and/or we need to rebalance
     else:
-        # (abs(last_alpaca_ask_price - last_oneInch_market_price)/last_alpaca_ask_price < rebalance_percent/100):
         logger.info('No arbitrage opportunity available')
-        logger.info('Rebalancing')
-        rebalancing()
+        if rebalance:
+            rebalancing()
     pass
 
+
 # Rebalance Portfolio
-
-
 def rebalancing():
+    logger.info('Rebalancing')
+    # Get current MATIC positions on both exchanges
     current_matic_alpaca = get_positions()
     current_matic_1Inch = Web3.fromWei(
         w3.eth.getBalance(wallet_address), 'ether')
-    if current_matic_alpaca > initial_matic_alpaca:
+    # If the current amount of matic on alpaca is greater than the initial amount of matic on alpaca then we need to sell some matic
+    # but we can only trade MATIC in multiples of 10 on Alpaca and we need to ensure we don't sell more so we can still trade on Alpaca
+    if (current_matic_alpaca > initial_matic_alpaca and current_matic_alpaca > 20):
         logger.info('Rebalancing by Selling MATIC on ALPACA')
         if production:
             sell_order = post_Alpaca_order(
@@ -371,12 +404,40 @@ def rebalancing():
     pass
 
 
+def needs_rebalancing():
+    # Get current MATIC positions on both exchanges
+    current_matic_alpaca = get_positions()
+    current_matic_1Inch = Web3.fromWei(
+        w3.eth.getBalance(wallet_address), 'ether')
+    # If the current amount of matic on alpaca is greater than the initial amount of matic on alpaca then we need to sell some matic
+    # but we can only trade MATIC in multiples of 10 on Alpaca and we need to ensure we don't sell more so we can still trade on Alpaca
+    if current_matic_alpaca % 10 != 0:
+        logger.info("We have enough matic on alpaca to trade")
+
+    if (current_matic_alpaca > initial_matic_alpaca and current_matic_alpaca > 20):
+        logger.info('Rebalancing by Selling MATIC on ALPACA')
+        return True
+    elif current_matic_alpaca < initial_matic_alpaca:
+        logger.info('Rebalancing by Buying MATIC on ALPACA')
+        return True
+    elif current_matic_1Inch > initial_matic_1inch:
+        logger.info('Rebalancing by Selling MATIC on 1Inch')
+        return True
+    elif current_matic_1Inch < initial_matic_1inch:
+        logger.info('Rebalancing by Buying MATIC on 1Inch')
+        return True
+    return False
+
+
 # establish web3 connection
 w3 = connect_to_ETH_provider()
 
 # Initial Matic Balance on Alpaca and 1Inch
 initial_matic_alpaca = get_positions()
 initial_matic_1inch = Web3.fromWei(w3.eth.getBalance(wallet_address), 'ether')
+
+alpaca_trade_counter = 0
+oneInch_trade_counter = 0
 
 
 loop = asyncio.get_event_loop()
