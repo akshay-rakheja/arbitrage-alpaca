@@ -24,6 +24,8 @@ waitTime = 5
 # Minimum percentage between prices to trigger arbitrage
 min_arb_percent = 0.5
 
+# Percentage difference between the prices to trigger rebalancing
+rebalance_percent = 0.4
 
 # OneInch API
 BASE_URL = 'https://api.1inch.io/v4.0/137'
@@ -399,13 +401,13 @@ def rebalancing():
     # Only execute rebalancing trades if production is true (we are live)
     if production:
         if (current_matic_alpaca - 10 > 0 and alpaca_trade_counter != 0):
-            if alpaca_trade_counter > 0:
+            if (alpaca_trade_counter > 0 and last_alpaca_ask_price < last_oneInch_market_price * (1 + rebalance_percent/100)):
                 logger.info('Rebalancing Alpaca side by selling on Alpaca')
                 sell_order = post_Alpaca_order(
                     trading_pair, 10, 'sell', 'market', 'gtc')
                 if sell_order['status'] == 'accepted':
                     alpaca_trade_counter -= 1
-            else:
+            elif(alpaca_trade_counter < 0 and last_alpaca_ask_price > last_oneInch_market_price * (1 - rebalance_percent/100)):
                 logger.info('Rebalancing Alpaca side by buying on Alpaca')
                 buy_order = post_Alpaca_order(
                     trading_pair, 10, 'buy', 'market', 'gtc')
@@ -417,17 +419,17 @@ def rebalancing():
                 'Unable to rebalance Alpaca side due to insufficient funds')
 
         if current_matic_1Inch - 10 > 0 and oneInch_trade_counter != 0:
-            if oneInch_trade_counter > 0:
+            if (oneInch_trade_counter > 0 and last_oneInch_market_price < last_alpaca_ask_price * (1 + rebalance_percent/100)):
                 logger.info('Rebalancing oneInch side by selling on oneInch')
                 sell_order_data = get_oneInch_swap_data(
                     matic_address, usdc_address, amount_to_exchange)
                 sell_order = signAndSendTransaction(sell_order_data)
                 if sell_order == True:
                     oneInch_trade_counter -= 1
-            else:
+            elif(oneInch_trade_counter < 0 and last_oneInch_market_price > last_alpaca_ask_price * (1 - rebalance_percent/100)):
                 logger.info('Rebalancing oneInch side by buying on oneInch')
                 buy_order_data = get_oneInch_swap_data(
-                    matic_address, usdc_address, amount_to_exchange)
+                    usdc_address, matic_address, amount_to_exchange)
                 buy_order = signAndSendTransaction(buy_order_data)
                 if sell_order == True:
                     oneInch_trade_counter += 1
