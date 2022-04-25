@@ -463,7 +463,7 @@ def get_allowance(_token):
 
 def approve_ERC20(_amount_of_ERC):
     '''
-    Creating calldata to approve 1 Inch router to spend  _amount_of_ERC worth of our USDC tokens
+    Creating transaction data to approve 1 Inch router to spend  _amount_of_ERC worth of our USDC tokens
     '''
     allowance_before = get_allowance(wallet_address)
     logger.info("allowance before: {0}".format(allowance_before))
