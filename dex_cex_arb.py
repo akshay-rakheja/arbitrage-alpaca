@@ -202,13 +202,10 @@ def get_account_details():
     try:
         account = requests.get(
             '{0}/v2/account'.format(BASE_ALPACA_URL), headers=HEADERS)
-        # logger.info('Alpaca account reply status code: {0}'.format(
-        # account.status_code))
         if account.status_code != 200:
-            # logger.info(
-            #     "Undesirable response from Alpaca! {}".format(account.json()))
+            logger.info(
+                "Undesirable response from Alpaca! {}".format(account.json()))
             return False
-        # logger.info('get_account_details: {0}'.format(account.json()))
     except Exception as e:
         logger.exception(
             "There was an issue getting account details from Alpaca: {0}".format(e))
@@ -439,6 +436,71 @@ def rebalancing():
                 'Unable to rebalance oneInch side due to insufficient funds')
 
     pass
+
+
+def get_allowance(_token):
+    '''
+    Get allowance for a given token, the 1inch router is allowed to spend
+    '''
+    try:
+        allowance = requests.get(
+            '{0}/approve/allowance?tokenAddress={1}&walletAddress={2}'.format(BASE_URL, _token, wallet_address))
+        logger.info('1inch allowance reply status code: {0}'.format(
+            allowance.status_code))
+        if allowance.status_code != 200:
+            logger.info(
+                "Undesirable response from 1 Inch! This is probably bad.")
+            return False
+        logger.info('get_allowance: {0}'.format(allowance.json()))
+
+    except Exception as e:
+        logger.exception(
+            "There was an issue getting allowance for the token from 1 Inch: {0}".format(e))
+        return False
+    logger.info("allowance: {0}".format(allowance))
+    return allowance.json()
+
+
+def approve_ERC20(_amount_of_ERC):
+    '''
+    Creating calldata to approve 1 Inch router to spend  _amount_of_ERC worth of our USDC tokens
+    '''
+    allowance_before = get_allowance(wallet_address)
+    logger.info("allowance before: {0}".format(allowance_before))
+
+    try:
+        approve_txn = requests.get(
+            '{0}/approve/transaction?tokenAddress={1}&amount={2}'.format(BASE_URL, usdc_address, _amount_of_ERC))
+        logger.info('1inch allowance reply status code: {0}'.format(
+            approve_txn.status_code))
+        if approve_txn.status_code != 200:
+            logger.info(
+                "Undesirable response from 1 Inch! This is probably bad.")
+            return False
+        logger.info('get_allowance: {0}'.format(approve_txn.json()))
+
+    except Exception as e:
+        logger.exception(
+            "There was an issue allowing usdc spend from 1 Inch: {0}".format(e))
+        return False
+
+    approve_txn = approve_txn.json()
+    nonce = w3.eth.getTransactionCount(wallet_address)
+
+    print("gas price is:", w3.fromWei(int(approve_txn['gasPrice']), 'gwei'))
+
+    tx = {
+        'nonce': nonce,
+        'to': usdc_address,
+        'chainId': 137,
+        # 'value': approve_txn['value'],
+        'gasPrice': w3.toWei(70, 'gwei'),
+        'from': wallet_address,
+        'data': approve_txn['data']
+    }
+
+    tx['gas'] = 80000
+    return tx
 
 
 # establish web3 connection
