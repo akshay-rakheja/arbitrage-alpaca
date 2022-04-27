@@ -91,7 +91,7 @@ async def main():
     while True:
         l1 = loop.create_task(get_oneInch_quote_data(
             matic_address, usdc_address, amount_to_exchange))
-        l2 = loop.create_task(get_Alpaca_quote_data(trading_pair, exchange))
+        l2 = loop.create_task(get_alpaca_quote_data(trading_pair, exchange))
         # Wait for the tasks to finish
         await asyncio.wait([l1, l2])
         check_arbitrage()
@@ -129,7 +129,7 @@ async def get_oneInch_quote_data(_from_coin, _to_coin, _amount_to_exchange):
     return last_oneInch_market_price
 
 
-async def get_Alpaca_quote_data(trading_pair, exchange):
+async def get_alpaca_quote_data(trading_pair, exchange):
     '''
     Get trade quote data from Alpaca API
     '''
