@@ -94,7 +94,7 @@ async def main():
         l2 = loop.create_task(get_alpaca_quote_data(trading_pair, exchange))
         # Wait for the tasks to finish
         await asyncio.wait([l1, l2])
-        check_arbitrage()
+        await check_arbitrage()
         # Wait for the a certain amount of time between each quote request
         await asyncio.sleep(waitTime)
 
@@ -321,7 +321,7 @@ async def signAndSendTransaction(transaction_data):
 
 
 # Check for Arbitrage opportunities
-def check_arbitrage():
+async def check_arbitrage():
     logger.info('Checking for arbitrage opportunities')
     rebalance = needs_rebalancing()
     global alpaca_trade_counter
@@ -340,7 +340,7 @@ def check_arbitrage():
                 # To buy 10 MATIC, we multiply its price by 10 (amount to exchnage) and then futher multiply it by 10^6 to get USDC value
                 buy_order_data = get_oneInch_swap_data(
                     usdc_address, matic_address, last_oneInch_market_price*amount_of_usdc_to_trade)
-                buy_order = signAndSendTransaction(buy_order_data)
+                buy_order = await signAndSendTransaction(buy_order_data)
                 if buy_order == True:
                     oneInch_trade_counter += 1
     # If the current price at alpaca is less than the current price at 1inch by a given arb % and we do not need a rebalnce
@@ -357,13 +357,13 @@ def check_arbitrage():
                 # To sell 10 MATIC, we pass it amount to exchnage
                 sell_order_data = get_oneInch_swap_data(
                     matic_address, usdc_address, amount_to_exchange)
-                sell_order = signAndSendTransaction(sell_order_data)
+                sell_order = await signAndSendTransaction(sell_order_data)
                 if sell_order == True:
                     oneInch_trade_counter -= 1
     # If neither of the above conditions are met then either there is no arbitrage opportunity found and/or we need to rebalance
     else:
         if rebalance:
-            rebalancing()
+            await rebalancing()
         else:
             logger.info('No arbitrage opportunity available')
     pass
@@ -389,7 +389,7 @@ def needs_rebalancing():
 
 
 # Rebalance Portfolio
-def rebalancing():
+async def rebalancing():
     logger.info('Rebalancing')
     global alpaca_trade_counter
     global oneInch_trade_counter
@@ -426,7 +426,7 @@ def rebalancing():
             if production:
                 sell_order_data = get_oneInch_swap_data(
                     matic_address, usdc_address, amount_to_exchange)
-                sell_order = signAndSendTransaction(sell_order_data)
+                sell_order = await signAndSendTransaction(sell_order_data)
                 if sell_order == True:
                     oneInch_trade_counter -= 1
         elif(oneInch_trade_counter < 0 and last_oneInch_market_price > last_alpaca_ask_price * (1 - rebalance_percent/100)):
@@ -434,7 +434,7 @@ def rebalancing():
             if production:
                 buy_order_data = get_oneInch_swap_data(
                     usdc_address, matic_address, amount_to_exchange)
-                buy_order = signAndSendTransaction(buy_order_data)
+                buy_order = await signAndSendTransaction(buy_order_data)
                 if sell_order == True:
                     oneInch_trade_counter += 1
     if current_matic_1Inch - 10 < 0 and oneInch_trade_counter != 0:
